@@ -1,10 +1,27 @@
 # TravelSpace
 
-A planner for exhibitions and large events. Organizers arrange the floor plan and compare simulated visitor flow; exhibitors claim available booths; visitors choose exhibits and get a walking route.
+**Shape the space. Guide the flow.**
+
+TravelSpace helps organizers plan club fairs, exhibitions, and large events by exploring how people move through a venue before the doors open. Built for HackCMU 2026.
+
+## What it does
+
+- **Organizers:** Edit floor plans, simulate visitor movement, view crowd heatmaps, and compare layouts.
+- **Exhibitors:** Get booth and staffing recommendations, then reserve a location.
+- **Visitors:** Choose exhibits and plan a walking route.
+- **Workspaces:** Save separate layouts and reservations for multiple events.
+
+## Quick demo
+
+Open **Workspaces**, select a venue, and choose **Organizer**. Run **Simulate flow**, set a baseline, move a booth, and simulate again to compare results. Switch roles to try exhibitor reservations or visitor routes.
+
+## Built with
+
+React, TypeScript, Tailwind CSS, Vinext/Vite, Cloudflare Workers and D1, and Drizzle ORM. Crowd simulation runs in a browser worker.
 
 ## Run locally
 
-Requires Node.js 22.13 or newer (Node 24 recommended).
+Requires Node.js 22.13 or newer.
 
 ```sh
 npm ci
@@ -13,118 +30,8 @@ node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1
 npm run dev
 ```
 
-Apply the initial migration once per fresh local database. Open the local URL printed by the development server. Local database state stays in `.wrangler/state`; it is separate from the hosted database. The deployed app starts with its own sample event.
+Apply the database migration once per fresh local database, then open the URL printed by the development server.
 
-## Pages and navigation
+## Prototype scope
 
-- `/`: Home, listing all event workspaces.
-- `/admin`: Admin, where workspaces are created from a blank hall or a sample exhibition, renamed, and removable workspaces can be deleted.
-- `/workspaces/:id`: Workspace entrance with three explicitly labeled role cards.
-- `/workspaces/:id/organizer`: **Event organizer** — layout editor, simulation, and comparisons.
-- `/workspaces/:id/exhibitioner`: **Exhibitor** — booth selection and reservations.
-- `/workspaces/:id/visitor`: **Visitor** — exhibit interests and walking routes.
-
-Each role has a real page and URL. The built-in sample is workspace `main`. Workspaces use separate database records, so their layouts, bookings, and revisions cannot overwrite one another through the normal application flow. Creating a workspace does not create another deployed website.
-
-Use **Rename** beside a workspace in Admin to edit its name, then **Save name**. Names must contain 1–80 characters. Renaming preserves the workspace URL, venue, floor plan, and bookings. If another window changes the workspace, the dialog refreshes its current name and keeps your draft so you can review and retry.
-
-## Demo walkthrough
-
-1. From **Home**, open a workspace, choose **Organizer**, then **Simulate flow**.
-2. Choose **Set as baseline**.
-3. Drag a shape from the organizer tray onto an open part of the map. Alongside booths, food stations, and obstacles, the tray has reception desks, interior stairs, emergency exits, stages, seating, and restrooms. Emergency exits attach to the hall boundary; stairs can be placed inside. Overlapping or outside drops are rejected. Existing objects can be dragged or resized on the map, and arrow keys move a focused object by half a meter.
-4. Simulate again and compare the peak crowd, walking distance, and completed booth visits. This demonstrates a changed result; it does not guarantee every move is an improvement.
-5. Return to the workspace entrance with **Choose a different role**, then choose **Exhibitor**. Add or select a company and save its demand profile. When it is your randomly assigned turn, get a recommended location and staffing level from crowd-flow estimates, then confirm your RSVP. You can review alternative locations; booth size is assigned automatically. The next exhibitor receives recommendations from the updated layout. Another window in the same workspace updates within four seconds.
-6. Choose **Visitor** from the workspace entrance, select a few exhibits, and choose **Plan my route**.
-7. Go to **Admin**, enter a workspace name and venue, choose a blank or sample layout, and click **Create workspace**. The new workspace appears in both Admin and Home. Admin can remove a created workspace after confirming permanent deletion; the built-in sample is protected.
-
-Organizer edits save to a shared Cloudflare D1 event. An optimistic revision check rejects competing writes instead of silently overwriting them. Connection failures preserve the unsaved local layout and display retry/reload actions. Undo holds the last 20 local edits during the current session. Baselines and visitor selections are temporary exploration state.
-
-## Architecture
-
-- React / TypeScript on the Vinext starter; SVG floor-plan interaction.
-- `app/page.tsx`: main home page; legacy role-query links redirect to the sample workspace.
-- `app/admin/page.tsx`: workspace administration.
-- `app/workspaces/[workspaceId]/`: workspace entrance and distinct role routes.
-- `components/workspace-hub.tsx`: workspace directory and Admin creation form.
-- `components/workspace-gateway.tsx`: explicit role selection.
-- `components/event-workspace.tsx`: role-specific working surface, simulation playback, comparison.
-- `components/app-header.tsx`: Home/Admin navigation and workspace breadcrumb.
-- `components/floor-map.tsx`: floor rendering and pointer/keyboard editing.
-- `lib/event.ts`: data types and sample event.
-- `lib/simulation.ts`: obstacle-aware paths, seeded visitor itineraries, heatmap, layout checks, and visitor routes.
-- `app/api/workspaces/`: workspace creation/listing, scoped layout endpoints, and booth claims.
-- `lib/workspace-api.ts`: validated layout reads and updates.
-- `app/api/event/route.ts`: backward-compatible endpoint for the original sample workspace.
-- `db/event-store.ts`: prepared D1 statements and revision checks.
-- `db/schema.ts` and `drizzle/`: persistent schema and generated migration.
-- `.openai/hosting.json`: Sites project and logical D1 binding.
-
-## Simulation assumptions
-
-The default room is 30 × 20 meters. Visitors arrive across the event hours, leaving an arrival cutoff before closing. The simulation adapts the supplied Grasshopper crowd model: each visitor has a seeded focused, viewer, explorer, or social profile; a route through selected categories, choosing one competing booth in each category by popularity; a profile-specific speed (0.75–1.15 m/s); and browsing durations based on visit length, seeded variation, and the profile. Every entrant first completes check-in at one reachable reception desk. Their selected booths are then ordered with a preference for shorter walkable trips from that desk and from each subsequent booth. Selection uses inverse-square distance weighting with a five-meter offset, so farther booths remain possible. Dedicated seeded draws preserve each visitor’s interests, arrival time, and booth-specific dwell times across layout comparisons. Missing or unreachable reception prevents exploration. Focused visitors select 45% of available categories, explorers select 75–100%, and other profiles select 50–100% (rounded up). Food stations have multiple editable start/end availability windows, such as breakfast, lunch, and dinner. Each window attracts interested visitors who are still present; new stations start with meal windows within the event hours. The visitor slider sets total visitors in a run, not simultaneous occupancy or verified RSVPs.
-
-All active visitors advance together from a position snapshot. Movement combines target attraction (1.0), nearby separation (1.8, within 2 m), gradual wandering (0.30 times the profile factor), and previous direction (0.65 at a half-second tick). Shared routing fields guide visitors around booths, walls, and irregular room boundaries, with every movement segment checked against the walking grid. Local steering deadlocks recover toward a walkable waypoint after eight seconds without progress. Visitors join a first-in-first-out queue at the middle of the booth’s bottom/front edge. Booths and reception desks use processing speed in people per minute. Service time scales with the representative group’s population. Booth visitors then browse beside the booth for the remaining visit time while the next visitor can be served. The line extends forward at 0.8 m spacing (coarser on large grids), stops at walls or other objects, and admits new arrivals as space opens. Visitors advance toward the service point, then continue to the next stop and finally the exit. Finished visitors leave the floor; visitors with no exit route remain visible until closing. The grid and time step coarsen for very large venues.
-
-Playback offers 10×, 20×, 1 min/s, 5 min/s, and 15 min/s. It interpolates positions between simulation steps and shows profile-colored markers with paths traced from each active group’s entry to its current position; outlined markers identify queued visitors. A front-centered count badge shows the estimated total still in each booth queue, including visitors being served. Service progress is interpolated within each representative group, so the count decreases during service instead of dropping by the whole group at departure. Counts use full integers rather than compact thousands, and pause, speed changes, and seeking all use the same simulation clock. Physical group movement and occupancy statistics retain their existing sampling model. A bundled browser worker keeps computation off the main page. Long events (at least four hours with 500 or more visitors) use one-second simulation updates; smaller or shorter events retain half-second updates, and very large venues retain their existing coarser step. The routing grid stays independent, so wall and queue collision checks still cover each complete movement segment. Playback interpolates between updates. Unchanged crowd footprints are reused and nearby-crowd buckets use numeric indices. These choices target roughly 5–10 seconds on the local sample layout, with timing depending on crowding, venue size, and hardware; the coarser time step can slightly change estimated paths and totals. Stationary intervals are compressed while preserving timeline seeking and occupancy totals. Up to 1,000 representative agents are simulated, with a smaller sample for large routing grids; marker numbers and statistics carry their visitor weights. Population-weighted elliptical footprints stretch along walking direction (1.5:1) or the front-to-tail queue axis (2.5:1). Their area scales with represented visitors (0.9 m² walking / 0.7 m² queued per person, with a minimum body area). Radius therefore grows with the square root of population. Reachable-floor samples account for walls and obstacles: lost floor area increases pressure and slightly expands the influence footprint. Overlapping footprints add slowdown; distant large groups are included in spatial lookup. Queue service gradually shrinks the footprint using the same clock as the queue badge. Translucent map ellipses show the footprint in floor metres and are masked by walls and objects. These constants are illustrative assumptions, not empirically calibrated densities. Completed-visit counts include only stops whose wait finishes before closing.
-
-Reception desks require check-in and have editable processing speed. Seating provides occasional pauses with editable pause length. Restroom needs first arise one hour after arrival, then recur one hour after each completed visit (the restroom service itself remains 90 seconds per person); a restroom trip can interrupt and then resume browsing. Food interest remains a seeded 80% assumption. Interested visitors first become hungry 10–60 minutes after arrival; each serving window adds a personal response delay of up to 30 minutes (capped at 60% of the remaining window) instead of attracting everyone at opening. Station choice minimizes walking time, estimated remaining queue service, own service time, and a stable personal preference penalty of up to five minutes. The estimate counts represented people and remaining service for the group currently being served; it does not predict people still approaching or future congestion. Visitors avoid stations they cannot reach before closing. After service, visitors eat for 10–25 minutes at the nearest reachable seating area, or on reachable floor near the food station. Seating capacity is not modeled. If no off-queue eating position is reachable, eating time is retained at the current position. Eating is uninterrupted, then any suspended browsing, rest, or stage visit resumes; the next hunger time is 2–4 hours after eating finishes, followed by the personal serving-window response. This also allows later meals at continuously open stations while preventing rapid repeat meals across adjacent or overlapping windows. No new visitors join after a window closes; those already in line finish service. Windows cannot overlap at the same station, and an empty schedule means no food service. Older stations retain their original opening time through event close until edited. Meal times and station preferences are seeded independently of geometry and station order. These durations, preferences, and food-interest rates are illustrative assumptions, not calibrated predictions. Stages attract a sustained audience without a service queue. Spotlight strength controls the share of visitors drawn to a reachable stage (80% by default); average lingering time defaults to 15 minutes, with seeded visitor variation. Audience members spread across walkable viewing positions within four meters of the stage, resume their stay after food or restroom breaks, and then continue exploring. The map shows a spotlight glow whose intensity follows the setting; the glow stays inside the stage during heatmap playback so it cannot be mistaken for measured congestion. Stage schedules and timed performances are not modeled. Interior stairs remain walkable at the ordinary grid speed; step geometry, speed changes, and accessibility differences are not modeled. Emergency exits are boundary markers, not routine destinations or evacuation routes. The simulation is not an emergency-egress or safety assessment.
-
-The random seed and itinerary generation are independent of booth positions, so geometry-only comparisons use the same visitors, arrivals, and preferences. Changes to attendance, active booths, interest, or dwell settings clear the baseline. The heatmap retains the simulation's fine grid and gradients. Each visited cell is colored by the peak simultaneous estimated visitor density in a 2 × 2 meter window centered on that cell: relaxed below 1 person/m², busy from 1 to below 4 people/m², and push-through congestion at 4 people/m² or more. These are planning labels, not certified safety limits. The separate average-occupancy data remains available in the simulation result. Peak crowd is the highest simultaneous visitor count in any fixed 2 × 2 meter patch. General separation remains a soft steering preference. Queued visitors reduce crossing speed and impose their population-weighted elliptical clearance, which steering recovery cannot bypass. Visitors joining or advancing within their own queue may enter that footprint; other queues remain obstacles. Larger groups reserve more queue slots in proportion to the square root of their remaining population. Footprints may still overlap in compressed lines, increasing pressure on crossing traffic. Pedestrians try to pass around queues or stop until space opens. Longer service and queue spillback affect completed visits, walking time, and the heatmap. The queue-wait statistic includes elapsed waits for visitors still queued at closing; it starts at admission into the line, not at an approach blocked by a full line. Within each representative group, queue wait is calculated from sequential individual service starts spread across the group’s service duration, capped at closing for each person and excluding their own service time. The same calculation is used for exhibitor scenario averages. Group movement remains sampled, so this is an illustrative model rather than a validated crowd forecast or safety assessment. Low crowd counts caused by inaccessible booths must not be interpreted as improvement.
-
-Visitor routes greedily visit the nearest reachable selected booth next, then the exit. They are suggested routes, not guaranteed globally optimal tours. The gap target is a user-selected planning preference, not a building-code threshold.
-
-## Organizer layout insights
-
-The organizer sidebar groups findings into four expandable design categories: Access & Movement, Crowds & Queues, Exhibitor Placement & Exposure, and Amenities & Visitor Comfort. The sidebar is 433.5 px wide on desktop and 395.25 px at the smaller desktop breakpoint, reduced to 85% of the expanded width. Each issue has one bold title and map link, followed by one short solution with the relevant measurement integrated into the sentence; there is no separate metric subtitle. Warnings appear before informational suggestions; groups with findings start expanded. Detailed targets and evaluation limits are available through the info button. Layout edits clear simulation results, and the panel distinguishes immediate layout checks from simulation estimates.
-
-Immediate checks include routes to service fronts (rather than any side of a booth), reception and exit connectivity, overlaps, every narrow object-pair gap, reachable amenities, and walking-grid distance from booked booth fronts to the nearest restroom or seating area. A multi-source distance field accounts for obstacles and irregular rooms. Missing amenities are informational because facilities may exist outside the modeled hall.
-
-Simulation insights flag peak local density, per-station queue bottlenecks, and unmet intended booth service. Queue calculations use representative-agent population weights, include elapsed waits at closing, and interpolate partial group service using the same clock as queue badges. Intended booth visits include visitors who never join a queue. Here, completed booth service is distinct from completion of subsequent browsing. The default planning targets are 5 minutes admitted queue wait, 80% of intended booth service completed, 30 meters walking distance to an amenity, and 4 people/m² peak local density; these are prototype planning defaults, not verified safety thresholds. Pair gaps use the event's existing clearance target.
-
-Each category identifies evaluations that are not implemented yet, including wall clearance and route detours, congestion duration and queue obstruction, passing exposure and underused areas, and food-demand balance. Suggestions do not promise an improvement or automatically modify the plan: edit the layout or service settings and rerun to evaluate the result. The overall five-star rating uses the current simulation, weighting access 30%, crowds and queues 30%, intended booth service 25%, and amenity access 15%. It rounds to half stars; access warnings cap it at 3, stranded visitors at 2, and no completed booth service yields 1. Any unresolved suggestion prevents 5 stars. Missing simulation, attendance, booked booths, or intended visits leave it unrated. Changing the layout clears the simulation and rating. This is an illustrative planning score, not a validated crowd forecast. No automatic baseline comparison is added by this panel.
-
-## Scope and next steps
-
-The app has multiple saved workspaces and separate role pages. Admin is currently a prototype management page, not a password-protected account. Role URLs do not establish a user's identity. Before giving real exhibitors access, add per-user memberships and enforce Admin, organizer, and booth-owner permissions on the server. The booking endpoint only changes reservation fields and uses the workspace revision to prevent double booking.
-
-The hosted app retains its current audience settings, and a workspace link alone does not grant a teammate access. Further work could add exhibit descriptions, configurable booth staffing and frontage, and attendee arrival schedules.
-
-No paid model API key or external service account is required for the prototype. Numbered exhibits are demo data.
-
-## Validation
-
-```sh
-node --experimental-strip-types --test tests/simulation.test.mjs
-node --experimental-strip-types --test tests/workspaces.integration.test.mjs
-npx tsc --noEmit
-npm run build
-```
-
-The simulation tests cover reproducibility, obstacle avoidance, geometry-sensitive comparisons, blocked exits, invalid placements, visitor itineraries, and empty events. Integration tests require a running local preview and the existing local database configuration. They create disposable workspaces, test isolation and booking conflicts, then delete only their generated fixture IDs. They refuse a non-local target; set `FLOWPLAN_TEST_URL` if the preview uses a different local port.
-
-Role pages expose `read_event_layout`, and the organizer page also exposes `move_event_object`, through `document.modelContext` when supported. Admin exposes `create_workspace`. Each uses the same current workspace and actions as the visible UI.
-
-The heat overlay uses a continuous, softly colored surface in place of individual grid rectangles. Display-only Gaussian smoothing uses floor distances, checks crossed walkable cells so it cannot blend through walls or booth corners, and preserves local hotspot maxima. Bilinear interpolation produces curved boundaries, then density is assigned to four discrete pale bands: blue below 1, teal from 1 to below 2, amber from 2 to below 4, and rose at 4 or more people/m². Empty areas are transparent. The raster is generated only when the layout or simulation changes, is bounded to 1,200 pixels on its longer side, and scales with map zoom. Simulation density values and statistics are unchanged.
-
-Crowd path traces show only the already-traveled portion of each active group’s complete route, retain the route during queue holds, and disappear when the group leaves. Seeking backward restores the route appropriate to that time. Each displayed SVG path contains only already-traveled coordinates and ends at the group’s interpolated current position. Completed path prefixes are cached per group, extended during forward playback, and rebuilt when rewinding; future route coordinates are never sent to the displayed trace.
-
-
-## Sequential exhibitor RSVP
-
-The reservation layer calls the existing crowd simulator without changing its movement behavior. Exhibitors enter company name, category, expected popularity, and interaction time; the flow suggests staffing and assigns a booth size automatically. The organizer can configure size presets and booth prices. RSVP turns are randomly drawn and persisted, so refreshing does not reshuffle them; an organizer can explicitly choose another order. Detailed demand parameters are estimated from popularity and interaction time; existing advanced constraints remain preserved internally. The reservation queue is read-only, with a return-to-queue action for previously released or skipped exhibitors. Company profiles persist by stable ID through rename and layout saves. Legacy occupied booths remain reserved.
-
-Size guidance uses peak arrivals per minute × interaction time in minutes, plus staff, equipment, and storage allowances. These are planning estimates. The system assigns the smallest adequate organizer-defined preset that fits each location, or the largest eligible fit with an explicit space warning. Physical minimums, occupied seats, inaccessible frontage, protected rectangles, and configured budgets cannot be overridden. Seats with an unknown price are excluded when a budget must be checked. Staffing starts from estimated simultaneous interactions and adds a suggested person when simulated queue time exceeds interaction time.
-
-One baseline simulation supplies preliminary footfall. Up to five feasible seats are simulated with stable candidate identity and active-item ordering, retaining the same seeded booth preferences across location comparisons. Results show company and venue scores separately and rank them at 70% / 30%. Fixed scoring references are attendance for visit/exposure fractions, ten minutes for queue penalty, and four people/m² for density penalty. Venue balance uses walkable-cell occupancy uniformity and coverage; neighboring booth changes are reported against baseline. These references are illustrative and not calibrated safety thresholds.
-
-RSVP visitor counts are weighted completed booth-service counts; browsing may continue afterwards. Queue averages include waits ongoing at closing and exclude visitors who never entered a queue. Near-frontage exposure counts representative visitors whose recorded paths pass within three metres. Audience category matching is not inferred from demographic data. The simulator's service-rate input is passed through; arbitrary booth frontage and emergency evacuation are not modeled by this reservation layer.
-
-The browser worker runs candidates serially, stores compact comparison summaries, and recomputes selected playback on demand. Revision or size changes cancel old work. `POST /api/workspaces/:id/rsvp` validates the active turn and physical eligibility, then commits placement, history, and next-turn state in one revision-checked update. Request IDs make retries idempotent. Scores are labeled client preview estimates, never trusted as eligibility checks. Direct legacy POST claims are disabled; DELETE claims releases a reservation and restores its original seat footprint. Organizer requeueing permits a fresh turn while preserving history. Finishing the order starts a final simulation whose summary persists; unfinished evaluation is retryable after reload.
-
-Prototype role pages still do not authenticate a company or organizer. Server-side membership checks are needed before opening reservation access to real exhibitors.
-
-Reservation validation: `node --experimental-strip-types --test tests/rsvp.test.mjs tests/rsvp.integration.test.mjs tests/workspaces.integration.test.mjs`. Integration tests use disposable local workspaces and delete only their own generated fixtures.
-
-
-The compact organizer setup saves order, size presets, and optional pricing in one revision-checked operation. Blank price preserves existing prices; zero explicitly makes a booth free. Bulk pricing affects only currently available booths. Existing reservations, category restrictions, protected areas, and RSVP history are retained. Order can follow registration, popularity, company name, or the existing sequence. Size changes invalidate comparisons and refresh the exhibitor’s selected size dimensions.
+Simulation results are planning estimates, not validated crowd forecasts. Role pages currently have no per-user authentication.
